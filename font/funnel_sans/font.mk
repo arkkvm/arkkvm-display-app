@@ -1,0 +1,1 @@
+CSRCS += $(shell find -L $(LVGL_DIR)/font/funnel_sans/ -name "*.c")

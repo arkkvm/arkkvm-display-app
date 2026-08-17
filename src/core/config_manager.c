@@ -1,5 +1,6 @@
 #include "config_manager.h"
 #include "page_manager.h"
+#include "../utils/command.h"
 #include "../utils/debug.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,16 @@ static int compare_config(const UIConfig * a, const UIConfig * b)
 {
     return (a->orientation == b->orientation) && (a->sleep_time == b->sleep_time) &&
            (a->screen_luminance == b->screen_luminance) && (a->dark_screen_time == b->dark_screen_time);
+}
+
+static void config_sync_uboot_env(void)
+{
+    pthread_mutex_lock(&g_config_mutex);
+    int orientation      = g_config.orientation;
+    int screen_luminance = g_config.screen_luminance;
+    pthread_mutex_unlock(&g_config_mutex);
+
+    sync_uboot_disp_env(orientation, screen_luminance);
 }
 
 static void config_reset_defaults(void)
@@ -71,6 +82,7 @@ void config_init(void)
 {
     if(create_config_dir() != 0) {
         DEBUG_LOG("Warning: Using in-memory defaults only\n");
+        config_sync_uboot_env();
         return;
     }
 
@@ -80,6 +92,7 @@ void config_init(void)
         if(create_default_config() != 0) {
             DEBUG_LOG("Warning: Using in-memory defaults only\n");
         }
+        config_sync_uboot_env();
         return;
     }
 
@@ -114,6 +127,8 @@ void config_init(void)
     if(config_loaded) {
         DEBUG_LOG("Configuration loaded successfully from %s\n", UI_CONFIG_FILE_PATH);
     }
+
+    config_sync_uboot_env();
 }
 
 void config_apply_to_runtime(GlobalData * data)
@@ -155,6 +170,7 @@ int config_save_display_settings(const DisplaySettings * settings)
     if(config_save() != 0) {
         return -1;
     }
+    config_sync_uboot_env();
     return 1;
 }
 

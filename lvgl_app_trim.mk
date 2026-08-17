@@ -36,7 +36,7 @@ CSRCS := $(filter-out $(filter lv_draw_sdl%,$(CSRCS)),$(CSRCS))
 
 # Core widgets disabled in lv_conf.h (bare filenames from lv_widgets.mk).
 WIDGET_DROP := \
-	lv_arc.c lv_bar.c lv_btnmatrix.c lv_canvas.c lv_dropdown.c \
+	lv_bar.c lv_btnmatrix.c lv_canvas.c lv_dropdown.c \
 	lv_line.c lv_roller.c lv_slider.c lv_switch.c lv_table.c lv_textarea.c
 CSRCS := $(filter-out $(WIDGET_DROP),$(CSRCS))
 

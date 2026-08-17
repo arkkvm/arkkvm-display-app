@@ -11,7 +11,9 @@ typedef enum {
     PAGE_SETTINGS,
     PAGE_SETTINGS_DISPLAY,
     PAGE_SETTINGS_ABOUT,
+    PAGE_SETTINGS_NETWORK_RESET,
     PAGE_SETTINGS_REBOOT,
+    PAGE_SETTINGS_FACTORY_RESET,
     PAGE_MAX
 } PageType;
 
@@ -74,13 +76,23 @@ void page_manager_init(void);
 void page_switch(PageType page_type);
 void page_back(void);
 void page_update_all(void);
-
+/*
+ * Thread-safe: mark pages dirty (e.g. from IPC worker). Apply later on the
+ * LVGL thread via page_process_pending_updates() — never call LVGL from IPC.
+ */
+void page_request_update_all(void);
+/* LVGL thread only. No-op if nothing pending. */
+void page_process_pending_updates(void);
+PageType page_get_current(void);
+/* Walk ptype chain up to PAGE_MAIN (same path as repeated Back). */
+void page_go_home(void);
 
 
 // macros for easier page operations
 #define PAGE_SWITCH(page_type) page_switch(page_type)
 #define PAGE_BACK() page_back()
 #define PAGE_RELOAD() page_update_all()
+#define PAGE_GO_HOME() page_go_home()
 
 GlobalData* page_get_global_data(void);
 

@@ -6,6 +6,8 @@
 #include "../pages/settings_display_page.h"
 #include "../pages/settings_about_page.h"
 #include "../pages/settings_reboot_page.h"
+#include "../pages/settings_network_reset_page.h"
+#include "../pages/settings_factory_reset_page.h"
 #include "../utils/view_util.h"
 #include "../utils/command.h"
 #include "../utils/time_util.h"
@@ -14,6 +16,8 @@
 
 // GlobalData static instance
 static char tmp_ipv6[45];
+/* Set from any thread; cleared only on LVGL thread in page_process_pending_updates. */
+static volatile int g_page_update_pending = 0;
 
 static GlobalData g_global_data = {
     .ip = "",
@@ -98,6 +102,16 @@ static Page g_pages[PAGE_MAX] = {
         .container = NULL,
         .is_created = false
     },
+     [PAGE_SETTINGS_NETWORK_RESET] = {
+        .ptype = PAGE_SETTINGS,
+        .type = PAGE_SETTINGS_NETWORK_RESET,
+        .name = "settings_network_reset",
+        .init = settings_network_reset_page_init,
+        .update = settings_network_reset_page_update,
+        .cleanup = settings_network_reset_page_cleanup,
+        .container = NULL,
+        .is_created = false
+    },
      [PAGE_SETTINGS_REBOOT] = {
         .ptype = PAGE_SETTINGS,
         .type = PAGE_SETTINGS_REBOOT,
@@ -105,6 +119,16 @@ static Page g_pages[PAGE_MAX] = {
         .init = settings_reboot_page_init,
         .update = settings_reboot_page_update,
         .cleanup = settings_reboot_page_cleanup,
+        .container = NULL,
+        .is_created = false
+    },
+     [PAGE_SETTINGS_FACTORY_RESET] = {
+        .ptype = PAGE_SETTINGS,
+        .type = PAGE_SETTINGS_FACTORY_RESET,
+        .name = "settings_factory_reset",
+        .init = settings_factory_reset_page_init,
+        .update = settings_factory_reset_page_update,
+        .cleanup = settings_factory_reset_page_cleanup,
         .container = NULL,
         .is_created = false
     }
@@ -166,7 +190,14 @@ void page_switch(PageType page_type) {
 
     // show the new page
     lv_obj_clear_flag(g_pages[page_type].container, LV_OBJ_FLAG_HIDDEN);
-    
+
+    if(page_type == PAGE_SETTINGS) {
+        settings_page_request_scroll_top();
+    }
+    if(page_type == PAGE_SETTINGS_FACTORY_RESET) {
+        settings_factory_reset_page_request_confirm();
+    }
+
     // update the new page
     g_pages[page_type].update();
 }
@@ -181,13 +212,64 @@ void page_back(void) {
     }
 }
 
-// update all pages
+PageType page_get_current(void)
+{
+    return g_current_page;
+}
+
+void page_go_home(void)
+{
+    int i;
+
+    /*
+     * Hide every non-main page container, then show Main in front.
+     * Safer than only walking ptype: stray visible pages (z-order / HIDDEN
+     * races) cannot cover the home screen afterward.
+     */
+    for(i = 0; i < (int)PAGE_MAX; i++) {
+        if(i == (int)PAGE_MAIN) {
+            continue;
+        }
+        if(g_pages[i].is_created && g_pages[i].container) {
+            lv_obj_add_flag(g_pages[i].container, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if(!g_pages[PAGE_MAIN].is_created) {
+        g_pages[PAGE_MAIN].container = are_create_view(lv_scr_act());
+        lv_obj_set_size(g_pages[PAGE_MAIN].container, LV_PCT(100), LV_PCT(100));
+        lv_obj_clear_flag(g_pages[PAGE_MAIN].container, LV_OBJ_FLAG_SCROLLABLE);
+        g_pages[PAGE_MAIN].init(g_pages[PAGE_MAIN].container);
+        g_pages[PAGE_MAIN].is_created = true;
+    }
+
+    g_current_page = PAGE_MAIN;
+    lv_obj_clear_flag(g_pages[PAGE_MAIN].container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(g_pages[PAGE_MAIN].container);
+    g_pages[PAGE_MAIN].update();
+}
+
+// update all pages (LVGL thread only)
 void page_update_all(void) {
     for (int i = 0; i < PAGE_MAX; i++) {
         if (g_pages[i].is_created) {
             g_pages[i].update();
         }
     }
+}
+
+void page_request_update_all(void)
+{
+    g_page_update_pending = 1;
+}
+
+void page_process_pending_updates(void)
+{
+    if(!g_page_update_pending) {
+        return;
+    }
+    g_page_update_pending = 0;
+    page_update_all();
 }
 
 // get global data

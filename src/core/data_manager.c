@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include "../components/view_hold_action.h"
 #include "../utils/command.h"
 #include "network_vlan.h"
 
@@ -12,7 +13,18 @@ static const int UPDATE_INTERVAL = 2;
 
 static void update_ip_address(GlobalData * data)
 {
+    char carrier[8] = {0};
     char new_ip[20] = {0};
+
+    /* Link down: clear stale IP immediately (#1). */
+    if(run_command("cat /sys/class/net/eth0/carrier 2>/dev/null", carrier, sizeof(carrier)) == 0
+       && carrier[0] == '0') {
+        if(data->ip[0] != '\0') {
+            memset(data->ip, 0, sizeof(data->ip));
+        }
+        return;
+    }
+
     if(run_command("ifconfig eth0 | grep 'inet addr:' | awk '{print $2}' | cut -d':' -f2",
                    new_ip, sizeof(new_ip)) == 0) {
         if(strcmp(data->ip, new_ip) != 0) {
@@ -119,6 +131,11 @@ void data_manager_update(void)
 {
     static time_t last_run = 0;
     time_t now = time(NULL);
+
+    /* Defense in depth: never popen/sysfs poll during hold/busy on LVGL thread. */
+    if(view_hold_action_blocks_background()) {
+        return;
+    }
 
     if(now - last_run < UPDATE_INTERVAL) {
         return;

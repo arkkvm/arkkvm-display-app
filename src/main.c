@@ -3,6 +3,8 @@
 #include "src/core/data_manager.h"
 #include "src/core/config_manager.h"
 #include "src/core/socket_server.h"
+#include "src/core/ui_job_queue.h"
+#include "src/components/view_hold_action.h"
 #include "src/utils/command.h"
 #include "src/utils/debug.h"
 #include "src/utils/time_util.h"
@@ -12,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/time.h>
+#include <time.h>
 #include <stdbool.h>
 #include <limits.h>
 
@@ -22,8 +24,22 @@ bool g_debug_log = false;
 
 static bool is_init_ui = false;
 
+/*
+ * Hold / busy must be the only UI-thread work: skip idle screen policy and
+ * all polling so the countdown timer + redraw stay exclusive.
+ */
+static bool background_work_allowed(void)
+{
+    return !view_hold_action_blocks_background();
+}
+
 static void screen_timer_callback(lv_timer_t * t)
 {
+    (void)t;
+
+    if(!background_work_allowed()) {
+        return;
+    }
 
     DEBUG_LOG("Current time: %lld\n", (long long)get_now_time());
     GlobalData * data = page_get_global_data();
@@ -42,16 +58,25 @@ static void screen_timer_callback(lv_timer_t * t)
         DEBUG_LOG(">>> Sleep triggered (idle for %us)\n", data->sleep_time);
         update_screen_luminance();
     }
-
-    
 }
+
 static void timer_callback(lv_timer_t * t)
 {
+    (void)t;
+
+    if(!background_work_allowed()) {
+        return;
+    }
+    /* Drain IPC config jobs + deferred page updates before shell polling. */
+    ui_job_process_pending();
+    page_process_pending_updates();
     data_manager_update();
 }
 
 void my_touch_feedback_cb(lv_indev_drv_t * drv, lv_event_t e)
 {
+    (void)drv;
+    (void)e;
 
     GlobalData * data = page_get_global_data();
 
@@ -97,6 +122,7 @@ int main(int argc, char * argv[])
     disp_drv.sw_rotate = 1;
     disp_drv.rotated   = LV_DISP_ROT_90;
     lv_disp_t * disp   = lv_disp_drv_register(&disp_drv);
+    (void)disp;
 
     // initialize and register the input device driver
     evdev_init();
@@ -111,8 +137,6 @@ int main(int argc, char * argv[])
 
     // initialize configuration manager
     config_init();
-    
-   
 
     DEBUG_LOG("arkkvm_ui UI initialization started.\n");
 
@@ -126,33 +150,40 @@ int main(int argc, char * argv[])
     // create a periodic timer to update data
     lv_timer_create(timer_callback, 2000, NULL);
     lv_timer_create(screen_timer_callback, 1000, NULL);
-    // main loop
-
-
 
     is_init_ui = true;
+    (void)is_init_ui;
     while(1) {
-        lv_timer_handler(); // let the GUI do its work
-        usleep(5000);       // sleep for 5 milliseconds
+        lv_timer_handler();
+        /*
+         * Apply deferred IPC config / page refresh as soon as hold/busy ends
+         * (within one main-loop tick), without waiting for the 2s poll.
+         */
+        if(background_work_allowed()) {
+            ui_job_process_pending();
+            page_process_pending_updates();
+        }
+        usleep(5000);
     }
 
     return 0;
 }
 
+/* Monotonic ms — wall-clock/NTP steps must not advance the hold countdown. */
 uint32_t custom_tick_get(void)
 {
     static uint64_t start_ms = 0;
-    if(start_ms == 0) {
-        struct timeval tv_start;
-        gettimeofday(&tv_start, NULL);
-        start_ms = (tv_start.tv_sec * 1000000 + tv_start.tv_usec) / 1000;
+    struct timespec ts;
+    uint64_t now_ms;
+
+    if(clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        /* Extremely unlikely; keep tick from standing still. */
+        return start_ms ? (uint32_t)start_ms : 0;
     }
 
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    uint64_t now_ms;
-    now_ms = (tv_now.tv_sec * 1000000 + tv_now.tv_usec) / 1000;
-
-    uint32_t time_ms = now_ms - start_ms;
-    return time_ms;
+    now_ms = (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+    if(start_ms == 0) {
+        start_ms = now_ms;
+    }
+    return (uint32_t)(now_ms - start_ms);
 }

@@ -63,3 +63,24 @@ int set_screen_luminance(int value)
     DEBUG_LOG("command %s \n", command);
     run_command(command, tmp, sizeof(tmp));
 }
+
+int sync_uboot_disp_env(int orientation, int screen_luminance)
+{
+    int disp_orient = (orientation == 1) ? 1 : 2;
+    char cmd[128];
+
+    snprintf(cmd, sizeof(cmd), "fw_setenv disp_orient %d", disp_orient);
+    if(run_command_no_result(cmd) != 0) {
+        DEBUG_LOG("Failed to set disp_orient=%d\n", disp_orient);
+        return -1;
+    }
+
+    snprintf(cmd, sizeof(cmd), "fw_setenv disp_bl %d", screen_luminance);
+    if(run_command_no_result(cmd) != 0) {
+        DEBUG_LOG("Failed to set disp_bl=%d\n", screen_luminance);
+        return -1;
+    }
+
+    DEBUG_LOG("Synced uboot env: disp_orient=%d, disp_bl=%d\n", disp_orient, screen_luminance);
+    return 0;
+}

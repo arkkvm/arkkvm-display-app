@@ -365,6 +365,11 @@
     LV_FONT_DECLARE(lv_font_fs_regular_10) \
     LV_FONT_DECLARE(lv_font_fs_regular_14) \
     LV_FONT_DECLARE(lv_font_fs_regular_16) \
+    LV_FONT_DECLARE(lv_font_fs_regular_18) \
+    LV_FONT_DECLARE(lv_font_fs_regular_20) \
+    LV_FONT_DECLARE(lv_font_fs_regular_24) \
+    LV_FONT_DECLARE(lv_font_fs_regular_30) \
+    LV_FONT_DECLARE(lv_font_fs_regular_40) \
     LV_FONT_DECLARE(lv_font_fs_medium_10)  \
     LV_FONT_DECLARE(lv_font_fs_medium_12)  \
     LV_FONT_DECLARE(lv_font_fs_medium_22)  \
@@ -441,7 +446,7 @@
 
 /*Documentation of the widgets: https://docs.lvgl.io/latest/en/html/widgets/index.html*/
 
-#define LV_USE_ARC        0
+#define LV_USE_ARC        1
 
 #define LV_USE_ANIMIMG    0
 

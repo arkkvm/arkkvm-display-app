@@ -5,15 +5,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <pthread.h>
-#include "data_manager.h"
 #include "page_manager.h"
-#include "config_manager.h"
-#include "../utils/command.h"
+#include "ui_job_queue.h"
 #include "../utils/net_util.h"
 #include "../utils/debug.h"
-#include "../utils/time_util.h"
 #include "network_vlan.h"
 
 static int server_fd = -1;
@@ -72,30 +70,30 @@ static void * ipc_server_thread(void * arg)
         struct sockaddr_un client_addr;
         socklen_t len = sizeof(client_addr);
 
-        //
         if((client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &len)) == -1) {
             perror("accept");
             continue;
         }
 
-        // read command
         ssize_t n = read(client_fd, buf, sizeof(buf) - 1);
         if(n > 0) {
-            buf[n]             = '\0';
-            trim_trailing(buf);
+            GlobalData * page_data;
             char response[256] = {0};
 
-            // Parse KEY=VALUE
-            char * key             = strtok(buf, "=");
-            char * value           = strtok(NULL, "=");
+            buf[n] = '\0';
+            trim_trailing(buf);
+
+            char * key   = strtok(buf, "=");
+            char * value = strtok(NULL, "=");
             if(key) {
                 trim_trailing(key);
             }
             if(value) {
                 trim_trailing(value);
             }
-            GlobalData * page_data = page_get_global_data();
-            bool is_change         = false;
+
+            page_data = page_get_global_data();
+
             if(key != NULL) {
                 if(strcmp(key, "REPORT_IPV6_ADDRESSES") != 0 && strcmp(key, "REPORT_VLAN_IPV6_ADDRESSES") != 0) {
                     DEBUG_LOG("IPC Command Received: %s=%s\n", key, value ? value : "NULL");
@@ -106,54 +104,24 @@ static void * ipc_server_thread(void * arg)
                 }
 
                 if(strcmp(key, "GET_CONFIG") == 0) {
-                    // Get all configuration values
-                    lv_disp_rot_t current_rotation = lv_disp_get_rotation(lv_disp_get_default());
-                    int orientation                = (current_rotation == LV_DISP_ROT_90) ? 1 : 0;
-                    int luminance                  = page_data->screen_luminance;
-                    int dark_time                  = page_data->dark_screen_time;
-                    int sleep_time                 = page_data->sleep_time;
-
-                    snprintf(response, sizeof(response),
-                             "ORIENTATION=%d,LUMINANCE=%d,DARK_SCREEN_TIME=%d,SLEEP_TIME=%d", orientation, luminance,
-                             dark_time, sleep_time);
-
+                    /* Snapshot GlobalData only — no LVGL from this thread. */
+                    ui_job_format_config_response(response, sizeof(response));
                 } else if(strcmp(key, "SCREEN_ORIENTATION") == 0 && value != NULL) {
-
-                    // 1 = normal LV_DISP_ROT_90, 0 = inverted LV_DISP_ROT_270
-                    // Set screen orientation
-                    int orientation = atoi(value);
-                    lv_disp_set_rotation(lv_obj_get_disp(lv_scr_act()),
-                                         orientation == 1 ? LV_DISP_ROT_90 : LV_DISP_ROT_270);
+                    /* 1 = LV_DISP_ROT_90, 0 = LV_DISP_ROT_270; apply on UI thread. */
+                    ui_job_post_orientation(atoi(value));
                     snprintf(response, sizeof(response), "OK");
-                    page_data->orientation = orientation;
-                    is_change              = true;
                 } else if(strcmp(key, "SCREEN_LUMINANCE") == 0 && value != NULL) {
-                    // Set screen luminance
-                    int luminance = atoi(value);
-                    page_data->screen_luminance = luminance;
+                    ui_job_post_luminance(atoi(value));
                     snprintf(response, sizeof(response), "OK");
-                    page_data->lastTouchTime = lv_tick_get();
-                    update_screen_luminance();
-                    is_change = true;
                 } else if(strcmp(key, "DARK_SCREEN_TIME") == 0 && value != NULL) {
-                    // Set dark screen timeout
-                    int sec = atoi(value);
-                    page_data->dark_screen_time = sec;
+                    ui_job_post_dark_screen_time(atoi(value));
                     snprintf(response, sizeof(response), "OK");
-                    is_change = true;
                 } else if(strcmp(key, "SLEEP_TIME") == 0 && value != NULL) {
-                    // Set sleep timeout
-                    int sec = atoi(value);
-                    page_data->sleep_time = sec;
+                    ui_job_post_sleep_time(atoi(value));
                     snprintf(response, sizeof(response), "OK");
-                    is_change = true;
-
-                }
-
-                else if(strcmp(key, "REPORT_IPV6_ADDRESSES") == 0 && value != NULL) {
+                } else if(strcmp(key, "REPORT_IPV6_ADDRESSES") == 0 && value != NULL) {
                     snprintf(response, sizeof(response), "OK");
                     if(strcmp(value, last_value) != 0) {
-
                         char * show_ipv6 = handle_ipv6_report(value);
                         set_tmp_ipv6_address(show_ipv6);
                         DEBUG_LOG("Received new IPv6 report: %s\n", value);
@@ -162,6 +130,7 @@ static void * ipc_server_thread(void * arg)
                         }
                         strncpy(last_value, value, sizeof(last_value) - 1);
                         last_value[sizeof(last_value) - 1] = '\0';
+                        page_request_update_all();
                     }
                 } else if(strcmp(key, "REPORT_VLAN_CONFIG") == 0 && value != NULL) {
                     snprintf(response, sizeof(response), "OK");
@@ -169,7 +138,7 @@ static void * ipc_server_thread(void * arg)
                         if(network_vlan_apply_report(page_data, value)) {
                             strncpy(last_vlan_value, value, sizeof(last_vlan_value) - 1);
                             last_vlan_value[sizeof(last_vlan_value) - 1] = '\0';
-                            page_update_all();
+                            page_request_update_all();
                         }
                     }
                 } else if(strcmp(key, "REPORT_VLAN_IPV6_ADDRESSES") == 0 && value != NULL) {
@@ -178,7 +147,7 @@ static void * ipc_server_thread(void * arg)
                         if(network_vlan_apply_ipv6_report(page_data, value)) {
                             strncpy(last_vlan_ipv6_value, value, sizeof(last_vlan_ipv6_value) - 1);
                             last_vlan_ipv6_value[sizeof(last_vlan_ipv6_value) - 1] = '\0';
-                            page_update_all();
+                            page_request_update_all();
                         }
                     } else {
                         DEBUG_LOG("REPORT_VLAN_IPV6_ADDRESSES: unchanged, skipped\n");
@@ -188,12 +157,6 @@ static void * ipc_server_thread(void * arg)
                 }
             }
 
-            if(is_change) {
-                if(config_update_from_global(page_data) > 0) {
-                    data_manager_reset_poll_timer();
-                }
-            }
-            // Send response
             write(client_fd, response, strlen(response));
         }
         close(client_fd);
@@ -213,4 +176,65 @@ void ipc_server_stop(void)
         server_fd = -1;
     }
     pthread_cancel(server_thread);
+}
+
+/* Client: send a command to arkkvm-app cmd socket (/tmp/arkkvm_cmd.sock). */
+bool ipc_send_command_timeout(const char * cmd, char * response, size_t resp_size,
+                              int timeout_sec)
+{
+    const char * sock_path = "/tmp/arkkvm_cmd.sock";
+    int fd;
+    struct sockaddr_un addr;
+    ssize_t n;
+    struct timeval tv;
+
+    if(!cmd || !response || resp_size == 0) {
+        return false;
+    }
+    if(timeout_sec <= 0) {
+        timeout_sec = 5;
+    }
+    response[0] = '\0';
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if(fd < 0) {
+        snprintf(response, resp_size, "ERROR=socket");
+        return false;
+    }
+
+    tv.tv_sec  = timeout_sec;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
+
+    if(connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        snprintf(response, resp_size, "ERROR=connect");
+        close(fd);
+        return false;
+    }
+
+    if(write(fd, cmd, strlen(cmd)) < 0) {
+        snprintf(response, resp_size, "ERROR=write");
+        close(fd);
+        return false;
+    }
+
+    n = read(fd, response, resp_size - 1);
+    close(fd);
+    if(n <= 0) {
+        snprintf(response, resp_size, "ERROR=read");
+        return false;
+    }
+    response[n] = '\0';
+    trim_trailing(response);
+    return strncmp(response, "OK", 2) == 0;
+}
+
+bool ipc_send_command(const char * cmd, char * response, size_t resp_size)
+{
+    return ipc_send_command_timeout(cmd, response, resp_size, 5);
 }

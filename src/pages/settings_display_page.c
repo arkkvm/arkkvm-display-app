@@ -11,6 +11,11 @@ static lv_obj_t * current_parent = NULL;
 
 static lv_style_t style_radio;
 
+/* Figma 975:52 — content rows start at y=64, row h=58, label pad_y≈16→17 */
+#define DISPLAY_TITLE_Y   81
+#define DISPLAY_NORMAL_Y  139
+#define DISPLAY_UPSIDE_Y  197
+
 
 static void radio_btn_event_handler(lv_event_t * e)
 {
@@ -48,35 +53,32 @@ void settings_display_page_init(lv_obj_t * parent)
     ui.container = are_create_view(parent);
     lv_obj_set_size(ui.container, LV_PCT(100), LV_PCT(100));
 
-    view_navigation_init(ui.container, "Back", "Display");
+    view_navigation_init(ui.container, "Settings", "Display");
     lv_obj_set_style_bg_color(ui.container, lv_color_hex(0x000000), LV_PART_MAIN);
 
     ui.title_label = lv_label_create(ui.container);
     lv_label_set_text(ui.title_label, "Display Orientation");
     lv_obj_set_style_text_color(ui.title_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(ui.title_label, 
-        font_sls(FS_FONT_REGULAR_16) , LV_PART_MAIN);
-    lv_obj_set_pos(ui.title_label, 24, 80);
+    lv_obj_set_style_text_font(ui.title_label,
+        font_sls(FS_FONT_REGULAR_20) , LV_PART_MAIN);
+    lv_obj_set_pos(ui.title_label, 24, DISPLAY_TITLE_Y);
 
     lv_style_init(&style_radio);
     lv_style_set_radius(&style_radio, LV_RADIUS_CIRCLE);
 
-    //     lv_style_init(&style_radio_chk);
-    //    lv_style_set_radius(&style_radio, LV_RADIUS_CIRCLE);
-
     ui.normal_btn = lv_checkbox_create(ui.container);
     lv_checkbox_set_text(ui.normal_btn, "Normal");
-    lv_obj_set_style_text_font(ui.normal_btn, font_sls(FS_FONT_REGULAR_14), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui.normal_btn, font_sls(FS_FONT_REGULAR_20), LV_PART_MAIN);
     lv_obj_set_style_text_color(ui.normal_btn, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_pos(ui.normal_btn, 24, 131);
+    lv_obj_set_pos(ui.normal_btn, 24, DISPLAY_NORMAL_Y);
     lv_obj_add_flag(ui.normal_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_event_cb(ui.normal_btn, radio_btn_event_handler, LV_EVENT_CLICKED, NULL);
 
     ui.upside_down_btn = lv_checkbox_create(ui.container);
     lv_checkbox_set_text(ui.upside_down_btn, "Upside down");
-    lv_obj_set_style_text_font(ui.upside_down_btn,font_sls(FS_FONT_REGULAR_14), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui.upside_down_btn,font_sls(FS_FONT_REGULAR_20), LV_PART_MAIN);
     lv_obj_set_style_text_color(ui.upside_down_btn, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_pos(ui.upside_down_btn, 24, 179);
+    lv_obj_set_pos(ui.upside_down_btn, 24, DISPLAY_UPSIDE_Y);
     lv_obj_add_flag(ui.upside_down_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_event_cb(ui.upside_down_btn, radio_btn_event_handler, LV_EVENT_CLICKED, NULL);
 

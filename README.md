@@ -82,7 +82,12 @@ Runs on ArkKVM target hardware with framebuffer and evdev input:
 ./bin/arkkvm_ui
 ```
 
-Enable debug logging:
+Logs:
+
+- `/userdata/arkkvm/logs/arkkvm_ui.log` — application log, rotated at 20 MiB, at most 2 files (`arkkvm_ui.log` + `.1`)
+- `/userdata/arkkvm/log/arkkvm_ui.log` — startup stdout/stderr redirect, truncated at 20 MiB
+
+Also print the same application logs to stdout:
 
 ```bash
 ./bin/arkkvm_ui debug

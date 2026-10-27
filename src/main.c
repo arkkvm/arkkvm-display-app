@@ -103,6 +103,8 @@ int main(int argc, char * argv[])
         }
     }
 
+    file_log_init();
+
     lv_init();
 
     fbdev_init();
